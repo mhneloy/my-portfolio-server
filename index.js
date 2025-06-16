@@ -11,25 +11,10 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://mhneloy.netlify.app"],
     credentials: true,
   })
 );
-
-// verifyToken middlewares
-const verifyToken = (req, res, next) => {
-  const token = req.cookies?.token;
-  if (!token) {
-    return res.status(401).send({ message: "unauthorized access" });
-  }
-  try {
-    const decoded = jwt.verify(token, process.env.jwt_secret_key);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(403).send({ message: "Forbidden. Invalid token" });
-  }
-};
 
 app.get("/", (req, res) => {
   res.send("portfolio is running");
@@ -53,16 +38,46 @@ async function run() {
     const projects = db.collection("projects");
     const emails = db.collection("emails");
 
+    // verifyToken middlewares
+    const verifyToken = (req, res, next) => {
+      const token = req.cookies?.neloyToken;
+      if (!token) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+      try {
+        const decoded = jwt.verify(token, process.env.jwt_secret_key);
+        req.user = decoded;
+        next();
+      } catch (err) {
+        return res.status(403).send({ message: "Forbidden. Invalid token" });
+      }
+    };
+
+    // verify admin middlewares
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.user.email;
+      const query = { email: email };
+      const user = await profile.findOne(query);
+      const admin = user?.role === "admin";
+      if (!admin) {
+        return res
+          .status(403)
+          .send({ message: "Forbidden Acces, You are not Admin" });
+      }
+      next();
+    };
+
     // Auth Related APIs
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.jwt_secret_key, {
-        expiresIn: "1d",
+        expiresIn: "5h",
       });
       res
-        .cookie("token", token, {
+        .cookie("neloyToken", token, {
           httpOnly: true,
-          secure: false, //use true in production with HTTPS
+          secure: process.env.NODE_ENV === "production", //use true in production with HTTPS
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
         })
         .send({ success: true });
     });
